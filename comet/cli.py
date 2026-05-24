@@ -26,9 +26,17 @@ import subprocess, colorama
 
 class CustomTextArea(TextArea):
     BINDINGS = [
-        Binding("shift+enter", "insert_newline", "New Line", priority=True),
         Binding("enter", "commit_action", "Commit/Sync", priority=True)
     ]
+
+    def action_cursor_down(self, select: bool = False) -> None:
+        if self.cursor_location[0] == self.document.line_count - 1:
+            loc = self.cursor_location
+            self.cursor_location = (self.document.line_count - 1, len(self.document.get_line(self.document.line_count - 1)))
+            self.insert("\n")
+            self.cursor_location = (loc[0] + 1, min(loc[1], len(self.document.get_line(loc[0] + 1))))
+        else:
+            super().action_cursor_down(select=select)
 
     def action_insert_newline(self) -> None:
         self.insert("\n")
@@ -121,7 +129,6 @@ class CometTUI(App):
     """
 
     BINDINGS = [
-        Binding("enter", "commit_action", "Commit/Sync", priority=True),
         Binding("ctrl+r", "regenerate_action", "Regenerate", priority=True),
         Binding("ctrl+t", "exit_action", "Terminate", priority=True)
     ]
@@ -171,7 +178,7 @@ class CometTUI(App):
                 return
 
             text_area = self.query_one("#input", TextArea)
-            final_message = text_area.text
+            final_message = text_area.text.strip()
             
             subprocess.run(["git", "commit", "-a", "-m", final_message], capture_output=True)
             event.button.label = "Sync  ➤"
