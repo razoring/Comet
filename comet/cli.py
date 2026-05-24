@@ -3,6 +3,7 @@ from ollama import chat, ChatResponse, Client
 import argparse
 import subprocess
 import os
+import tempfile
 
 def main():
     client = Client()
@@ -13,6 +14,14 @@ def main():
     #print(diff)
     #print({"role": "user", "content": f"```diff\n{diff}\n```"})
     response:ChatResponse = chat(model=models[0].model, messages=[{"role": "system", "content": open("comet\system.md","r").read()}, {"role": "user", "content": f"```diff\n{diff}\n```"}], think=False, keep_alive=-1)
-    print(response.message.content)
+    message = response.message.content.strip()
+
+    with tempfile.NamedTemporaryFile(mode='w', delete=False) as f:
+        f.write(message)
+        temp = f.name
+    # trigger git commit, passing the file, forcing the editor to open, and staging all modified files (-a)
+    subprocess.run(["git", "commit", "-a", "-F", temp, "-e"])
+    try: os.remove(temp)
+    except PermissionError: pass
 
 if __name__ == "__main__": main()
