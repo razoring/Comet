@@ -150,7 +150,14 @@ class CometTUI(App):
         prompt_content = f"Diff to summarize:\n```diff\n{self.diff}\n```\n\nRecent Commits (For Context Only. DO NOT SUMMARIZE THESE):\n{self.commits}"
         
         while True:
-            response = chat(model=self.model, messages=[{"role": "system", "content": open("comet\system.md","r", encoding="utf-8").read()}, {"role": "user", "content": prompt_content}], options={"temperature": 0.9}, think=False, keep_alive=-1, stream=True)
+            messages = [{"role": "system", "content": open("comet\system.md","r", encoding="utf-8").read()}]
+            messages.append({"role": "user", "content": prompt_content})
+            
+            for past_response in self.past_responses:
+                messages.append({"role": "assistant", "content": past_response})
+                messages.append({"role": "user", "content": "Please provide a DIFFERENT summary. Do not repeat the previous ones."})
+                
+            response = chat(model=self.model, messages=messages, options={"temperature": 0.9}, think=False, keep_alive=-1, stream=True)
             message = ""
             for chunk in response:
                 message += chunk['message']['content']
