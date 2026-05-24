@@ -24,6 +24,15 @@ from textual.binding import Binding
 from textual import work
 import subprocess, colorama
 
+class CustomTextArea(TextArea):
+    BINDINGS = [
+        Binding("shift+enter", "insert_newline", "New Line", priority=True),
+        Binding("enter", "commit_action", "Commit/Sync", priority=True)
+    ]
+
+    def action_commit_action(self) -> None:
+        self.app.action_commit_action()
+
 class CometTUI(App):
     DEFAULT_CSS = """
     Screen {
@@ -109,9 +118,9 @@ class CometTUI(App):
     """
 
     BINDINGS = [
-        Binding("ctrl+enter", "commit_action", "Commit/Sync", priority=True),
+        Binding("enter", "commit_action", "Commit/Sync", priority=True),
         Binding("ctrl+r", "regenerate_action", "Regenerate", priority=True),
-        Binding("ctrl+q", "exit_action", "Quit", priority=True)
+        Binding("ctrl+t", "exit_action", "Terminate", priority=True)
     ]
 
     def __init__(self, commit: str, model: str, diff: str, commits: str):
@@ -124,12 +133,12 @@ class CometTUI(App):
     def compose(self) -> ComposeResult:
         with Vertical(id="main_container"):
             with Horizontal(id="input_row"):
-                yield TextArea(self.commit, id="input", show_line_numbers=False)
-                yield Button(" ₊✦  Regenerate", id="regenBtn")
+                yield CustomTextArea(self.commit, id="input", show_line_numbers=False)
+                yield Button(" ₊✦  Regenerate  ", id="regenBtn")
             with Horizontal(id="action_row"):
-                yield Button("✔   Commit", id="commitBtn")
-                yield Button("🗙   Quit", id="cancelBtn")
-            yield Label("[b]ctrl+r[/b] regenerate    [b]ctrl+q[/b] quit    [b]ctrl+enter[/b] continue", id="shortcuts")
+                yield Button(" ✔   Commit", id="commitBtn")
+                yield Button(" 🗙   Terminate", id="cancelBtn")
+            yield Label("[b]ctrl+r[/b] regenerate    [b]ctrl+t[/b] terminate    [b]enter[/b] continue    [b]shift+enter[/b] newline", id="shortcuts")
 
     def action_regenerate_action(self) -> None:
         regen_btn = self.query_one("#regenBtn", Button)
