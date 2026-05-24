@@ -160,6 +160,14 @@ class CometTUI(App):
         border: none;
     }
 
+    #undoBtn {
+        width: 1fr;
+        margin-left: 1;
+        height: 3;
+        background: $secondary;
+        border: none;
+    }
+
     #cancelBtn {
         margin-left: 1;
         height: 3;
@@ -208,6 +216,9 @@ class CometTUI(App):
                 yield Button(" ₊✦  Regenerate  ", id="regenBtn")
             with Horizontal(id="action_row"):
                 yield Button(" ✔   Commit ", id="commitBtn")
+                undo = Button(" ⊘   Undo ", id="undoBtn")
+                undo.display = False
+                yield undo
                 yield Button(" 🗙   Quit ", id="cancelBtn")
             yield Label("[white][b]ctrl+r[/b][/white] [gray]regenerate[/gray]    [white][b]enter[/b][/white] [gray]continue[/gray]    [white][b]tab[/b][/white] [gray]swap model[/gray]    [white][b]ctrl+z[/b][/white] [gray]undo[/gray]    [white][b]↓/↑[/b][/white] [gray]move lines[/gray]    [white][b]esc[/b][/white] [gray]quit[/gray]", id="shortcuts")
 
@@ -228,7 +239,7 @@ class CometTUI(App):
             regenBtn.press()
 
     def action_exit_action(self) -> None:
-        self.query_one("#cancelBtn", Button).press()
+        self.exit(f"{colorama.Fore.RED}User cancelled the operation. {colorama.Style.RESET_ALL}")
 
     def action_commit_action(self) -> None:
         commitBtn = self.query_one("#commitBtn", Button)
@@ -239,7 +250,9 @@ class CometTUI(App):
         commitBtn = self.query_one("#commitBtn", Button)
         if str(commitBtn.label).strip() == "Sync  ➤":
             subprocess.run(["git", "reset", "HEAD~1"], capture_output=True)
-            commitBtn.label = " ✔   Commit"
+            commitBtn.label = " ✔   Commit "
+            self.query_one("#undoBtn").display = False
+            self.query_one("#cancelBtn").display = True
 
     def on_mount(self) -> None:
         self.query_one("#input_row").border_title = f"{self.model}"
@@ -305,9 +318,14 @@ class CometTUI(App):
             
             subprocess.run(["git", "commit", "-a", "-m", finalMessage], capture_output=True)
             event.button.label = "Sync  ➤"
+            self.query_one("#undoBtn").display = True
+            self.query_one("#cancelBtn").display = False
             
         elif event.button.id == "cancelBtn":
             self.exit(f"{colorama.Fore.RED}User cancelled the operation. {colorama.Style.RESET_ALL}")
+
+        elif event.button.id == "undoBtn":
+            self.action_undo_commit()
             
         elif event.button.id == "regenBtn":
             event.button.disabled = True
