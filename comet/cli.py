@@ -144,13 +144,24 @@ class CometTUI(App):
 
     @work(thread=True)
     def regenerate(self) -> None:
+        if not hasattr(self, "past_responses"):
+            self.past_responses = set()
+            
         prompt_content = f"Diff to summarize:\n```diff\n{self.diff}\n```\n\nRecent Commits (For Context Only. DO NOT SUMMARIZE THESE):\n{self.commits}"
-        response = chat(model=self.model, messages=[{"role": "system", "content": open("comet\system.md","r", encoding="utf-8").read()}, {"role": "user", "content": prompt_content}], options={"temperature": 0.7}, think=False, keep_alive=-1, stream=True)
-        message = ""
-        for chunk in response:
-            message += chunk['message']['content']
-            self.call_from_thread(self.update_textarea, message, False)
-        self.call_from_thread(self.update_textarea, message, True)
+        
+        while True:
+            response = chat(model=self.model, messages=[{"role": "system", "content": open("comet\system.md","r", encoding="utf-8").read()}, {"role": "user", "content": prompt_content}], options={"temperature": 0.9}, think=False, keep_alive=-1, stream=True)
+            message = ""
+            for chunk in response:
+                message += chunk['message']['content']
+                self.call_from_thread(self.update_textarea, message, False)
+            
+            if message not in self.past_responses:
+                self.past_responses.add(message)
+                self.call_from_thread(self.update_textarea, message, True)
+                break
+            else:
+                self.call_from_thread(self.update_textarea, "", False)
 
     def update_textarea(self, message: str, finished: bool) -> None:
         text_area = self.query_one("#input", TextArea)
