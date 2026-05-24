@@ -216,8 +216,8 @@ class CometTUI(App):
                 yield CustomTextArea(self.commit, id="input", show_line_numbers=False)
                 yield Button(" ₊✦  Regenerate  ", id="regenBtn")
             with Horizontal(id="action_row"):
-                yield Button(" ✔   Commit ", id="commitBtn")
                 undo = Button(" ↺   Undo ", id="undoBtn")
+                yield Button(" ✔   Commit ", id="commitBtn")
                 undo.display = False
                 yield undo
                 yield Button(" 🗙   Quit ", id="cancelBtn")
@@ -254,6 +254,11 @@ class CometTUI(App):
             commitBtn.label = " ✔   Commit "
             self.query_one("#undoBtn").display = False
             self.query_one("#cancelBtn").display = True
+            
+            textArea = self.query_one("#input", TextArea)
+            textArea.disabled = False
+            input_row = self.query_one("#input_row")
+            input_row.styles.border = ("solid", "$primary")
 
     def on_mount(self) -> None:
         if self.provider == "auto" or self.model == "Loading...":
@@ -341,6 +346,10 @@ class CometTUI(App):
             event.button.label = "Sync  ➤"
             self.query_one("#undoBtn").display = True
             self.query_one("#cancelBtn").display = False
+            
+            textArea.disabled = True
+            input_row = self.query_one("#input_row")
+            input_row.styles.border = ("solid", "$surface")
             
         elif event.button.id == "cancelBtn":
             self.exit(f"{colorama.Fore.RED}User cancelled the operation. {colorama.Style.RESET_ALL}")
