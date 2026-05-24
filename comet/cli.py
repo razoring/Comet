@@ -7,12 +7,17 @@ import os
 
 def main():
     client = Client()
-    models = sorted(client.list().models, key=lambda m:m.size, reverse=False)
+    allModelsData = sorted(client.list().models, key=lambda m:m.size, reverse=False)
+    allModels = [m.model for m in allModelsData]
+    
+    loadedModels = client.ps().models
+    initialModel = loadedModels[0].model if loadedModels else allModels[0]
+
     diff = subprocess.run(["git", "diff", "HEAD", "-U5"], cwd=os.getcwd(), capture_output=True, text=True, check=True, encoding="utf-8").stdout
     commits = subprocess.run(["git", "log", "-n", "5", "--oneline"], cwd=os.getcwd(), capture_output=True, text=True, check=True, encoding="utf-8").stdout
     
     promptContent = f"Diff to summarize:\n```diff\n{diff}\n```"
-    app = CometTUI(commit="Generating...", model=models[0].model, diff=diff, commits=commits)
+    app = CometTUI(commit="Generating...", model=initialModel, diff=diff, commits=commits, allModels=allModels)
     result = app.run()
     if result: print(result)
 
@@ -142,15 +147,17 @@ class CometTUI(App):
     BINDINGS = [
         Binding("ctrl+r", "regenerate_action", "Regenerate", priority=True),
         Binding("ctrl+t", "exit_action", "Terminate", priority=True),
-        Binding("ctrl+z", "undo_commit", "Undo Commit", priority=True)
+        Binding("ctrl+z", "undo_commit", "Undo Commit", priority=True),
+        Binding("tab", "swap_model", "Swap Model", priority=True)
     ]
 
-    def __init__(self, commit: str, model: str, diff: str, commits: str):
+    def __init__(self, commit: str, model: str, diff: str, commits: str, allModels: list[str]):
         super().__init__()
         self.commit = commit
         self.model = model
         self.diff = diff
         self.commits = commits
+        self.allModels = allModels
 
     def compose(self) -> ComposeResult:
         with Vertical(id="main_container"):
@@ -162,7 +169,16 @@ class CometTUI(App):
             with Horizontal(id="action_row"):
                 yield Button(" ✔   Commit", id="commitBtn")
                 yield Button(" 🗙   Terminate", id="cancelBtn")
-            yield Label("[white][b]ctrl+r[/b][/white] [gray]regenerate[/gray]    [white][b]enter[/b][/white] [gray]continue[/gray]    [white][b]ctrl+z[/b][/white] [gray]undo[/gray]    [white][b]↓/↑[/b][/white] [gray]move lines[/gray]    [white][b]ctrl+t[/b][/white] [gray]terminate[/gray]", id="shortcuts")
+            yield Label("[white][b]ctrl+r[/b][/white] [gray]regenerate[/gray]    [white][b]enter[/b][/white] [gray]continue[/gray]    [white][b]ctrl+z[/b][/white] [gray]undo[/gray]    [white][b]↓/↑[/b][/white] [gray]move lines[/gray]    [white][b]tab[/b][/white] [gray]swap model[/gray]    [white][b]ctrl+t[/b][/white] [gray]terminate[/gray]", id="shortcuts")
+
+    def action_swap_model(self) -> None:
+        try:
+            currentIndex = self.allModels.index(self.model)
+        except ValueError:
+            currentIndex = -1
+        nextIndex = (currentIndex + 1) % len(self.allModels)
+        self.model = self.allModels[nextIndex]
+        self.query_one("#input_row").border_title = f"{self.model}"
 
     def action_regenerate_action(self) -> None:
         regenBtn = self.query_one("#regenBtn", Button)
@@ -230,7 +246,7 @@ class CometTUI(App):
                 messages.append({"role": "assistant", "content": pastResponse})
                 messages.append({"role": "user", "content": "Please provide a DIFFERENT summary. Do not repeat the previous ones."})
                 
-            response = chat(model=self.model, messages=messages, options={"temperature": 0.9}, think=False, keep_alive=-1, stream=True)
+            response = chat(model=self.model, messages=messages, options={"temperature": 0.9}, think=False, keep_alive="60m", stream=True)
             message = ""
             for chunk in response:
                 message += chunk['message']['content']
