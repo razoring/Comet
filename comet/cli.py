@@ -110,8 +110,8 @@ class CometTUI(App):
                 yield TextArea(self.commit, id="input", show_line_numbers=False)
                 yield Button(" ₊✦  Regenerate ", id="regenBtn")
             with Horizontal(id="action_row"):
-                yield Button("Commit  ➤", id="commitBtn")
-                yield Button("⛌   Exit", id="cancelBtn")
+                yield Button("✔   Commit", id="commitBtn")
+                yield Button("🗙   Exit", id="cancelBtn")
 
     def on_mount(self) -> None:
         self.query_one("#input_row").border_title = "Comet CLI"
@@ -124,10 +124,16 @@ class CometTUI(App):
             final_message = text_area.text
             
             subprocess.run(["git", "commit", "-a", "-m", final_message])
-            self.exit(f"{colorama.Fore.GREEN}Comet committed with:\n{final_message} {colorama.Style.RESET_ALL}")
+            event.button.label = "Sync   ➤"
+            event.button.id = "syncBtn"
+        elif event.button.id == "syncBtn":
+            event.button.label = "Syncing..."
+            event.button.disabled = True
+            subprocess.run(["git", "push"])
+            self.exit(f"{colorama.Fore.GREEN}Comet committed and synced successfully! {colorama.Style.RESET_ALL}")
             
         elif event.button.id == "cancelBtn":
-            self.exit(f"{colorama.Fore.RED}Comet cancelled the commit. {colorama.Style.RESET_ALL}")
+            self.exit(f"{colorama.Fore.RED}Comet cancelled the operation. {colorama.Style.RESET_ALL}")
             
         elif event.button.id == "regenBtn":
             event.button.disabled = True
