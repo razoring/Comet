@@ -120,17 +120,18 @@ class CometTUI(App):
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "commitBtn":
+            if str(event.button.label).strip() == "Sync   ➤":
+                event.button.label = "Syncing..."
+                event.button.disabled = True
+                subprocess.run(["git", "push"])
+                self.exit(f"{colorama.Fore.GREEN}Comet committed and synced successfully! {colorama.Style.RESET_ALL}")
+                return
+
             text_area = self.query_one("#input", TextArea)
             final_message = text_area.text
             
             subprocess.run(["git", "commit", "-a", "-m", final_message])
             event.button.label = "Sync   ➤"
-            event.button.id = "syncBtn"
-        elif event.button.id == "syncBtn":
-            event.button.label = "Syncing..."
-            event.button.disabled = True
-            subprocess.run(["git", "push"])
-            self.exit(f"{colorama.Fore.GREEN}Comet committed and synced successfully! {colorama.Style.RESET_ALL}")
             
         elif event.button.id == "cancelBtn":
             self.exit(f"{colorama.Fore.RED}Comet cancelled the operation. {colorama.Style.RESET_ALL}")
