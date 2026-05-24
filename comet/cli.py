@@ -216,7 +216,7 @@ class CometTUI(App):
                 yield Button(" ₊✦  Regenerate  ", id="regenBtn")
             with Horizontal(id="action_row"):
                 yield Button(" ✔   Commit ", id="commitBtn")
-                undo = Button(" ⊘   Undo ", id="undoBtn")
+                undo = Button(" ↺   Undo ", id="undoBtn")
                 undo.display = False
                 yield undo
                 yield Button(" 🗙   Quit ", id="cancelBtn")
