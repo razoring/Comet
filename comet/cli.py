@@ -131,6 +131,10 @@ class CometTUI(App):
         border: $primary;
     }
 
+    #input_row.committed {
+        border: $surface;
+    }
+
     #input {
         width: 1fr;
         height: 3;
@@ -258,7 +262,7 @@ class CometTUI(App):
             textArea = self.query_one("#input", TextArea)
             textArea.disabled = False
             input_row = self.query_one("#input_row")
-            input_row.styles.border = ("solid", "$primary")
+            input_row.remove_class("committed")
 
     def on_mount(self) -> None:
         if self.provider == "auto" or self.model == "Loading...":
@@ -349,7 +353,7 @@ class CometTUI(App):
             
             textArea.disabled = True
             input_row = self.query_one("#input_row")
-            input_row.styles.border = ("solid", "$surface")
+            input_row.add_class("committed")
             
         elif event.button.id == "cancelBtn":
             self.exit(f"{colorama.Fore.RED}User cancelled the operation. {colorama.Style.RESET_ALL}")
