@@ -4,8 +4,30 @@ from openai import OpenAI
 import argparse
 import subprocess
 import os
+import json
 import urllib.request
 import urllib.error
+
+def get_settings_path():
+    return os.path.join(os.path.dirname(__file__), "settings.json")
+
+def load_settings():
+    path = get_settings_path()
+    if os.path.exists(path):
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                return json.load(f)
+        except Exception:
+            pass
+    return {}
+
+def save_settings(provider, model):
+    path = get_settings_path()
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({"provider": provider, "model": model}, f)
+    except Exception:
+        pass
 
 def check_endpoint(url):
     try:
@@ -20,40 +42,18 @@ def main():
     args = parser.parse_args()
 
     provider = args.provider
-
+    model = ""
     if provider == "auto":
-        lmstudioUp = check_endpoint("http://localhost:1234/v1/models")
-        ollamaUp = check_endpoint("http://localhost:11434/api/tags")
-        if lmstudioUp and not ollamaUp:
-            provider = "lmstudio"
-        else:
-            provider = "ollama"
-
-    client = None
-    allModels = []
-    initialModel = ""
-
-    if provider == "ollama":
-        client = OllamaClient()
-        allModelsData = sorted(client.list().models, key=lambda m:m.size, reverse=False)
-        allModels = [m.model for m in allModelsData]
-        
-        loadedModels = client.ps().models
-        initialModel = loadedModels[0].model if loadedModels else (allModels[0] if allModels else "unknown")
-    elif provider == "lmstudio":
-        client = OpenAI(base_url="http://localhost:1234/v1", api_key="lm-studio")
-        try:
-            modelsData = client.models.list().data
-            allModels = [m.id for m in modelsData]
-            initialModel = allModels[0] if allModels else "unknown"
-        except Exception:
-            allModels = ["unknown"]
-            initialModel = "unknown"
+        settings = load_settings()
+        if "provider" in settings:
+            provider = settings["provider"]
+        if "model" in settings:
+            model = settings["model"]
 
     diff = subprocess.run(["git", "diff", "HEAD", "-U5"], cwd=os.getcwd(), capture_output=True, text=True, check=True, encoding="utf-8").stdout
     commits = subprocess.run(["git", "log", "-n", "5", "--oneline"], cwd=os.getcwd(), capture_output=True, text=True, check=True, encoding="utf-8").stdout
     
-    app = CometTUI(commit="Generating...", model=initialModel, diff=diff, commits=commits, allModels=allModels, provider=provider, client=client)
+    app = CometTUI(commit="Generating...", model=model, diff=diff, commits=commits, allModels=[], provider=provider, client=None)
     result = app.run()
     if result: print(result)
 
@@ -190,7 +190,7 @@ class CometTUI(App):
     def __init__(self, commit: str, model: str, diff: str, commits: str, allModels: list[str], provider: str = "ollama", client = None):
         super().__init__()
         self.commit = commit
-        self.model = model
+        self.model = model or "Loading..."
         self.diff = diff
         self.commits = commits
         self.allModels = allModels
@@ -210,6 +210,7 @@ class CometTUI(App):
             yield Label("[white][b]ctrl+r[/b][/white] [gray]regenerate[/gray]    [white][b]enter[/b][/white] [gray]continue[/gray]    [white][b]tab[/b][/white] [gray]swap model[/gray]    [white][b]ctrl+z[/b][/white] [gray]undo[/gray]    [white][b]↓/↑[/b][/white] [gray]move lines[/gray]    [white][b]ctrl+t[/b][/white] [gray]terminate[/gray]", id="shortcuts")
 
     def action_swap_model(self) -> None:
+        if not self.allModels: return
         try:
             currentIndex = self.allModels.index(self.model)
         except ValueError:
@@ -217,6 +218,7 @@ class CometTUI(App):
         nextIndex = (currentIndex + 1) % len(self.allModels)
         self.model = self.allModels[nextIndex]
         self.query_one("#input_row").border_title = f"{self.model}"
+        save_settings(self.provider, self.model)
 
     def action_regenerate_action(self) -> None:
         regenBtn = self.query_one("#regenBtn", Button)
@@ -240,6 +242,51 @@ class CometTUI(App):
     def on_mount(self) -> None:
         self.query_one("#input_row").border_title = f"{self.model}"
         self.query_one("#regenBtn").disabled = True
+        self.query_one("#commitBtn").disabled = True
+        self.initialize_llm()
+
+    @work(thread=True)
+    def initialize_llm(self) -> None:
+        if self.provider == "auto":
+            lmstudioUp = check_endpoint("http://localhost:1234/v1/models")
+            ollamaUp = check_endpoint("http://localhost:11434/api/tags")
+            if lmstudioUp and not ollamaUp:
+                self.provider = "lmstudio"
+            else:
+                self.provider = "ollama"
+
+        if self.provider == "ollama":
+            self.client = OllamaClient()
+            try:
+                allModelsData = sorted(self.client.list().models, key=lambda m:m.size, reverse=False)
+                self.allModels = [m.model for m in allModelsData]
+                loadedModels = self.client.ps().models
+                defaultModel = loadedModels[0].model if loadedModels else (self.allModels[0] if self.allModels else "unknown")
+            except Exception:
+                self.allModels = ["unknown"]
+                defaultModel = "unknown"
+        elif self.provider == "lmstudio":
+            self.client = OpenAI(base_url="http://localhost:1234/v1", api_key="lm-studio")
+            try:
+                modelsData = self.client.models.list().data
+                self.allModels = [m.id for m in modelsData]
+                defaultModel = self.allModels[0] if self.allModels else "unknown"
+            except Exception:
+                self.allModels = ["unknown"]
+                defaultModel = "unknown"
+
+        if getattr(self, "model", "") in self.allModels and self.model != "Loading...":
+            pass
+        else:
+            self.model = defaultModel
+
+        save_settings(self.provider, self.model)
+        
+        self.call_from_thread(self.post_initialize_llm)
+
+    def post_initialize_llm(self) -> None:
+        self.query_one("#input_row").border_title = f"{self.model}"
+        self.query_one("#commitBtn").disabled = False
         self.regenerate()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
