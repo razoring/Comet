@@ -280,12 +280,23 @@ class CometTUI(App):
         try:
             from textual.color import Color
             v = self.get_css_variables()
-            surface = Color.parse(v.get("surface", "#000000"))
-            text = Color.parse(v.get("text", "#ffffff"))
+            
+            def resolve_color(val, default_hex):
+                if val.startswith("auto") or not val: return default_hex
+                return val
+                
+            # Default to dark mode colors (#1e1e1e surface, #ffffff text) if unresolved
+            surface_str = resolve_color(v.get("surface", "#1E1E1E"), "#1E1E1E")
+            text_str = resolve_color(v.get("text", "#ffffff"), "#ffffff")
+            
+            surface = Color.parse(surface_str)
+            text = Color.parse(text_str)
             blended = surface.blend(text, 0.6)
+            
             css = f"""
             #input_row {{ border: solid {blended.hex}; }}
             #input_row.committed {{ border: solid {blended.hex}; }}
+            #input_row:focus-within {{ border: solid $primary; border-title-color: $primary; }}
             """
             self.stylesheet.add_source(css)
             self.stylesheet.update(self)
