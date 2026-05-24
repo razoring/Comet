@@ -18,7 +18,7 @@ def main():
     if result: print(result)
 
 from textual.app import App, ComposeResult
-from textual.widgets import TextArea, Button
+from textual.widgets import TextArea, Button, Label
 from textual.containers import Horizontal, Vertical
 from textual import work
 import subprocess, colorama
@@ -26,6 +26,8 @@ import subprocess, colorama
 class CometTUI(App):
     DEFAULT_CSS = """
     Screen {
+        width: 100%;
+        height: 100%;
         align: center middle;
         background: $surface;
     }
@@ -47,11 +49,10 @@ class CometTUI(App):
     }
 
     #main_container {
-        width: 80%;
-        height: auto;
+        width: 100%;
+        height: 100%;
         padding: 1 2;
         background: $surface;
-        align: left middle;
     }
 
     #input_row {
@@ -86,16 +87,31 @@ class CometTUI(App):
 
     #commitBtn {
         width: 1fr;
+        height: 3;
         background: $primary;
-        border: $primary;
+        border: none;
     }
 
     #cancelBtn {
         margin-left: 1;
+        height: 3;
         background: $secondary;
-        border: $secondary;
+        border: none;
+    }
+
+    #shortcuts {
+        width: 100%;
+        text-align: center;
+        color: white;
+        margin-top: 1;
     }
     """
+
+    BINDINGS = [
+        ("tab", "commit_action", "Commit/Sync"),
+        ("ctrl+r", "regenerate_action", "Regenerate (Focus)"),
+        ("ctrl+q", "exit_action", "Exit (Focus)")
+    ]
 
     def __init__(self, commit: str, model: str, diff: str, commits: str):
         super().__init__()
@@ -108,10 +124,24 @@ class CometTUI(App):
         with Vertical(id="main_container"):
             with Horizontal(id="input_row"):
                 yield TextArea(self.commit, id="input", show_line_numbers=False)
-                yield Button(" ₊✦  Regenerate ", id="regenBtn")
+                yield Button(" ₊✦  Regenerate", id="regenBtn")
             with Horizontal(id="action_row"):
                 yield Button("✔   Commit", id="commitBtn")
-                yield Button("🗙   Exit", id="cancelBtn")
+                yield Button("🗙   Quit", id="cancelBtn")
+            yield Label("[b]ctrl+r[/b] regenerate    [b]ctrl+q[/b] quit    [b]tab[/b] continue", id="shortcuts")
+
+    def action_regenerate_action(self) -> None:
+        regen_btn = self.query_one("#regenBtn", Button)
+        if not regen_btn.disabled:
+            regen_btn.press()
+
+    def action_exit_action(self) -> None:
+        self.query_one("#cancelBtn", Button).press()
+
+    def action_commit_action(self) -> None:
+        commit_btn = self.query_one("#commitBtn", Button)
+        if not commit_btn.disabled:
+            commit_btn.press()
 
     def on_mount(self) -> None:
         self.query_one("#input_row").border_title = "Comet CLI"
