@@ -12,7 +12,7 @@ jobs:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
     environment:
       name: pypi
-      url: https://pypi.org/p/comet-cli
+      url: https://pypi.org/p/cli-comet
     permissions:
       id-token: write
     steps:
