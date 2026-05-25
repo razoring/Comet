@@ -472,6 +472,16 @@ class CometTUI(App):
             textArea.text = ""
             self.regenerate()
 
+        elif event.button.id == "settingsBtn":
+            import platform
+            settings_path = get_settings_path()
+            if platform.system() == 'Windows':
+                os.startfile(settings_path)
+            elif platform.system() == 'Darwin':
+                subprocess.run(['open', settings_path])
+            else:
+                subprocess.run(['xdg-open', settings_path])
+
     @work(thread=True)
     def regenerate(self) -> None:
         self.is_generating = True
@@ -556,6 +566,32 @@ class CometTUI(App):
 
     @work(thread=True)
     def update_status_loop(self) -> None:
+        try:
+            settings_path = get_settings_path()
+            if os.path.exists(settings_path):
+                current_mtime = os.path.getmtime(settings_path)
+                if not hasattr(self, "_last_settings_mtime"):
+                    self._last_settings_mtime = current_mtime
+                elif current_mtime > self._last_settings_mtime:
+                    self._last_settings_mtime = current_mtime
+                    new_settings = load_settings()
+                    
+                    new_provider = new_settings.get("provider", self.provider)
+                    new_model = new_settings.get("model", self.model)
+                    
+                    changed = False
+                    if new_provider != self.provider:
+                        self.provider = new_provider
+                        changed = True
+                    if new_model != self.model:
+                        self.model = new_model
+                        changed = True
+                        
+                    if changed:
+                        self.call_from_thread(self.initialize_llm)
+        except Exception:
+            pass
+
         from datetime import datetime
         if not getattr(self, "model", ""):
             self.call_from_thread(self.update_border_title, "")
