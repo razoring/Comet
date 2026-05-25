@@ -1,6 +1,4 @@
 import colorama
-from ollama import chat as ollama_chat, Client as OllamaClient
-from openai import OpenAI
 import argparse
 import subprocess
 import os
@@ -10,10 +8,20 @@ import urllib.error
 import importlib.metadata
 import re
 import random
-from pydantic import BaseModel, Field
 
-class CommitResponse(BaseModel):
-    commit_message: str = Field(..., max_length=150, description="The concise commit message. DO NOT output diffs. STRICTLY limit to 150 characters.")
+COMMIT_RESPONSE_SCHEMA = {
+    "properties": {
+        "commit_message": {
+            "description": "The concise commit message. DO NOT output diffs. STRICTLY limit to 150 characters.",
+            "maxLength": 150,
+            "title": "Commit Message",
+            "type": "string"
+        }
+    },
+    "required": ["commit_message"],
+    "title": "CommitResponse",
+    "type": "object"
+}
 
 def extract_json_message(buffer: str) -> str:
     match = re.search(r'"commit_message"\s*:\s*"(.*)', buffer, re.DOTALL)
@@ -34,10 +42,13 @@ def load_settings():
     if os.path.exists(path):
         try:
             with open(path, "r", encoding="utf-8") as f:
-                return json.load(f)
+                settings = json.load(f)
+                if "quickStartup" not in settings:
+                    settings["quickStartup"] = True
+                return settings
         except Exception:
             pass
-    return {}
+    return {"quickStartup": True}
 
 def save_settings(provider, model):
     path = get_settings_path()
@@ -73,6 +84,7 @@ def headless_auto_commit(provider, model, diff, file_status, commits):
             provider = "ollama"
 
     if provider == "ollama":
+        from ollama import Client as OllamaClient
         client = OllamaClient()
         try:
             allModelsData = sorted(client.list().models, key=lambda m:m.size, reverse=False)
@@ -83,6 +95,7 @@ def headless_auto_commit(provider, model, diff, file_status, commits):
             allModels = ["unknown"]
             defaultModel = "unknown"
     elif provider == "lmstudio":
+        from openai import OpenAI
         client = OpenAI(base_url="http://localhost:1234/v1", api_key="lm-studio")
         try:
             modelsData = client.models.list().data
@@ -94,6 +107,7 @@ def headless_auto_commit(provider, model, diff, file_status, commits):
     elif provider == "openrouter":
         settings = load_settings()
         api_key = os.getenv("OPENROUTER_API_KEY") or settings.get("openrouter_api_key", "")
+        from openai import OpenAI
         client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key or "missing_key")
         try:
             modelsData = client.models.list().data
@@ -122,13 +136,14 @@ def headless_auto_commit(provider, model, diff, file_status, commits):
     buffer = ""
     try:
         if provider == "ollama":
+            from ollama import chat as ollama_chat
             response = ollama_chat(
                 model=model, 
                 messages=messages, 
                 options={"temperature": 0.9, "seed": random.randint(0, 1000000)}, 
                 think=False, 
                 stream=True,
-                format=CommitResponse.model_json_schema()
+                format=COMMIT_RESPONSE_SCHEMA
             )
             for chunk in response:
                 buffer += chunk['message']['content']
@@ -141,7 +156,7 @@ def headless_auto_commit(provider, model, diff, file_status, commits):
                     stream=True,
                     response_format={
                         "type": "json_schema", 
-                        "json_schema": {"name": "CommitResponse", "schema": CommitResponse.model_json_schema(), "strict": True}
+                        "json_schema": {"name": "CommitResponse", "schema": COMMIT_RESPONSE_SCHEMA, "strict": True}
                     }
                 )
             except Exception:
@@ -181,11 +196,102 @@ def headless_auto_commit(provider, model, diff, file_status, commits):
         
     print(f"{colorama.Fore.GREEN}Comet committed and synced successfully!{colorama.Style.RESET_ALL}")
 
+def run_init():
+    import sys
+    print(f"{colorama.Fore.CYAN}Initializing Comet CLI...{colorama.Style.RESET_ALL}")
+    
+    provider = "auto"
+    lmstudioUp = check_endpoint("http://localhost:1234/v1/models")
+    ollamaUp = check_endpoint("http://localhost:11434/api/tags")
+    if lmstudioUp and not ollamaUp:
+        provider = "lmstudio"
+    else:
+        provider = "ollama"
+        
+    print(f"{colorama.Fore.GREEN}Auto-detected provider: {provider}{colorama.Style.RESET_ALL}")
+    
+    settings = load_settings()
+    settings["provider"] = provider
+    settings["quickStartup"] = True
+    
+    model = ""
+    if provider == "ollama":
+        try:
+            from ollama import Client as OllamaClient
+            client = OllamaClient()
+            modelsData = sorted(client.list().models, key=lambda m:m.size, reverse=False)
+            allModels = [m.model for m in modelsData]
+            model = allModels[0] if allModels else "unknown"
+        except Exception:
+            model = "unknown"
+    elif provider == "lmstudio":
+        try:
+            from openai import OpenAI
+            client = OpenAI(base_url="http://localhost:1234/v1", api_key="lm-studio")
+            modelsData = client.models.list().data
+            allModels = [m.id for m in modelsData]
+            model = allModels[0] if allModels else "unknown"
+        except Exception:
+            model = "unknown"
+            
+    settings["model"] = model
+    
+    path = get_settings_path()
+    try:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(settings, f, indent=4)
+    except Exception:
+        pass
+        
+    print(f"{colorama.Fore.GREEN}Saved settings. Model: {model}{colorama.Style.RESET_ALL}")
+    
+    if os.name == 'nt':
+        try:
+            import winreg
+            key = winreg.OpenKey(winreg.HKEY_CURRENT_USER, r"Software\Microsoft\Windows\CurrentVersion\Run", 0, winreg.KEY_SET_VALUE)
+            winreg.SetValueEx(key, "CometCLI", 0, winreg.REG_SZ, "comet --warmup")
+            winreg.CloseKey(key)
+            print(f"{colorama.Fore.GREEN}Added Comet to Windows Startup for quick initialization.{colorama.Style.RESET_ALL}")
+        except Exception as e:
+            print(f"{colorama.Fore.RED}Failed to add startup entry: {e}{colorama.Style.RESET_ALL}")
+            
+    print(f"{colorama.Fore.GREEN}Initialization complete!{colorama.Style.RESET_ALL}")
+
+def run_warmup():
+    settings = load_settings()
+    if not settings.get("quickStartup", True):
+        return
+        
+    provider = settings.get("provider", "ollama")
+    if provider == "ollama":
+        try:
+            from ollama import Client as OllamaClient
+            client = OllamaClient()
+            client.list() 
+        except Exception:
+            pass
+    elif provider == "lmstudio":
+        try:
+            from openai import OpenAI
+            client = OpenAI(base_url="http://localhost:1234/v1", api_key="lm-studio")
+            client.models.list()
+        except Exception:
+            pass
 
 def main():
     parser = argparse.ArgumentParser(description="Comet - AI commit message generator")
     parser.add_argument("-a", "--auto", action="store_true", help="Skip the UI and automatically commit and sync")
+    parser.add_argument("-i", "--init", action="store_true", help="Initialize Comet and configure QuickStartup")
+    parser.add_argument("--warmup", action="store_true", help=argparse.SUPPRESS)
     args = parser.parse_args()
+
+    if args.init:
+        run_init()
+        return
+
+    if args.warmup:
+        run_warmup()
+        return
 
     settings = load_settings()
     provider = settings.get("provider", "auto")
@@ -531,6 +637,7 @@ class CometTUI(App):
                 self.provider = "ollama"
 
         if self.provider == "ollama":
+            from ollama import Client as OllamaClient
             self.client = OllamaClient()
             try:
                 allModelsData = sorted(self.client.list().models, key=lambda m:m.size, reverse=False)
@@ -541,6 +648,7 @@ class CometTUI(App):
                 self.allModels = ["unknown"]
                 defaultModel = "unknown"
         elif self.provider == "lmstudio":
+            from openai import OpenAI
             self.client = OpenAI(base_url="http://localhost:1234/v1", api_key="lm-studio")
             try:
                 modelsData = self.client.models.list().data
@@ -552,6 +660,7 @@ class CometTUI(App):
         elif self.provider == "openrouter":
             settings = load_settings()
             api_key = os.getenv("OPENROUTER_API_KEY") or settings.get("openrouter_api_key", "")
+            from openai import OpenAI
             self.client = OpenAI(base_url="https://openrouter.ai/api/v1", api_key=api_key or "missing_key")
             try:
                 modelsData = self.client.models.list().data
@@ -641,6 +750,7 @@ class CometTUI(App):
                 messages.append({"role": "user", "content": "Please provide a DIFFERENT summary. Do not repeat the previous ones."})
                 
             if self.provider == "ollama":
+                from ollama import chat as ollama_chat
                 response = ollama_chat(
                     model=self.model, 
                     messages=messages, 
@@ -648,7 +758,7 @@ class CometTUI(App):
                     think=False, 
                     keep_alive="60m", 
                     stream=True,
-                    format=CommitResponse.model_json_schema()
+                    format=COMMIT_RESPONSE_SCHEMA
                 )
                 buffer = ""
                 for chunk in response:
@@ -664,7 +774,7 @@ class CometTUI(App):
                         stream=True,
                         response_format={
                             "type": "json_schema", 
-                            "json_schema": {"name": "CommitResponse", "schema": CommitResponse.model_json_schema(), "strict": True}
+                            "json_schema": {"name": "CommitResponse", "schema": COMMIT_RESPONSE_SCHEMA, "strict": True}
                         }
                     )
                 except Exception:
