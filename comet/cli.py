@@ -220,6 +220,15 @@ class CometTUI(App):
         margin-top: 1;
     }
 
+    #cwd_label {
+        dock: bottom;
+        width: 100%;
+        height: 1;
+        text-align: left;
+        color: $text-muted;
+        background: transparent;
+    }
+
     #logo {
         width: 100%;
         text-align: center;
@@ -264,6 +273,7 @@ class CometTUI(App):
                 yield undo
                 yield Button(" ⛌   Quit ", id="cancelBtn")
             yield Label("[$text][b]ctrl+r[/b][/] regenerate    [$text][b]enter[/b][/] continue    [$text][b]tab[/b][/] swap model    [$text][b]ctrl+z[/b][/] undo    [$text][b]↓/↑[/b][/] move lines    [$text][b]esc[/b][/] quit", id="shortcuts")
+            yield Label(f"  {os.getcwd().replace(os.sep, '/')}/", id="cwd_label")
 
     def action_swap_model(self) -> None:
         if self.query_one("#input_row").has_class("committed"):
