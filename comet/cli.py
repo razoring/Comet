@@ -223,7 +223,7 @@ class CometTUI(App):
     def __init__(self, commit: str, model: str, diff: str, commits: str, allModels: list[str], provider: str = "ollama", client = None):
         super().__init__()
         self.commit = commit
-        self.model = model or "Loading..."
+        self.model = model or ""
         self.diff = diff
         self.commits = commits
         self.allModels = allModels
@@ -289,7 +289,7 @@ class CometTUI(App):
             self.query_one("#regenBtn").disabled = False
 
     def on_mount(self) -> None:
-        if self.provider == "auto" or self.model == "Loading...":
+        if self.provider == "auto" or self.model == "":
             self.notify("Welcome! This is the longest it'll take to load. :D", title="Scanning Providers", severity="information", timeout=3.0)
         self.query_one("#input_row").border_title = f"{self.model}"
         self.query_one("#regenBtn").disabled = True
@@ -497,12 +497,16 @@ class CometTUI(App):
         if finished:
             self.query_one("#regenBtn").disabled = False
             self.is_generating = False
+            if self.provider == "ollama":
+                from datetime import datetime, timedelta
+                self._ollama_expires_at[self.model] = datetime.now() + timedelta(minutes=60)
+            self.needs_poll = False
 
     @work(thread=True)
     def update_status_loop(self) -> None:
         from datetime import datetime
-        if getattr(self, "model", "Loading...") == "Loading...":
-            self.call_from_thread(self.update_border_title, "Loading...")
+        if not getattr(self, "model", ""):
+            self.call_from_thread(self.update_border_title, "")
             return
 
         if self.provider != "ollama":
@@ -510,39 +514,42 @@ class CometTUI(App):
             return
 
         status = ""
+        expires_at = self._ollama_expires_at.get(self.model)
+        now = datetime.now(expires_at.tzinfo) if (expires_at and expires_at.tzinfo) else datetime.now()
+        secs = (expires_at - now).total_seconds() if expires_at else -1
         
-        if self.is_generating:
-            status = "Loading..."
+        if expires_at and secs <= 0:
             self.needs_poll = True
-        else:
-            if getattr(self, "needs_poll", False):
-                try:
-                    import ollama
-                    ps = ollama.ps()
-                    models = getattr(ps, 'models', []) if hasattr(ps, 'models') else ps.get('models', [])
-                    self._ollama_expires_at.clear()
-                    for m in models:
-                        m_name = getattr(m, 'model', m.get('model', '')) if hasattr(m, 'model') else m.get('model', '')
-                        m_expires = getattr(m, 'expires_at', None) if hasattr(m, 'expires_at') else m.get('expires_at')
-                        self._ollama_expires_at[m_name] = m_expires
-                        if getattr(m, 'name', ''):
-                            self._ollama_expires_at[getattr(m, 'name', '')] = m_expires
-                    self.needs_poll = False
-                except Exception:
-                    pass
+            expires_at = None
+            secs = -1
 
-            expires_at = self._ollama_expires_at.get(self.model)
-            if expires_at:
-                now = datetime.now(expires_at.tzinfo) if expires_at.tzinfo else datetime.now()
-                diff = expires_at - now
-                secs = diff.total_seconds()
-                if secs > 0:
-                    mins = int(secs // 60)
-                    status = f"TTL: {mins}m" if mins > 0 else "TTL: <1m"
-                else:
-                    self.needs_poll = True
-            else:
-                status = ""
+        if getattr(self, "needs_poll", False) and not self.is_generating:
+            try:
+                import ollama
+                ps = ollama.ps()
+                models = getattr(ps, 'models', []) if hasattr(ps, 'models') else ps.get('models', [])
+                self._ollama_expires_at.clear()
+                for m in models:
+                    m_name = getattr(m, 'model', m.get('model', '')) if hasattr(m, 'model') else m.get('model', '')
+                    m_expires = getattr(m, 'expires_at', None) if hasattr(m, 'expires_at') else m.get('expires_at')
+                    self._ollama_expires_at[m_name] = m_expires
+                    if getattr(m, 'name', ''):
+                        self._ollama_expires_at[getattr(m, 'name', '')] = m_expires
+                self.needs_poll = False
+                
+                expires_at = self._ollama_expires_at.get(self.model)
+                now = datetime.now(expires_at.tzinfo) if (expires_at and expires_at.tzinfo) else datetime.now()
+                secs = (expires_at - now).total_seconds() if expires_at else -1
+            except Exception:
+                pass
+
+        if self.is_generating and (expires_at is None or secs <= 0):
+            status = "Loading..."
+        elif expires_at and secs > 0:
+            mins = int(secs // 60)
+            status = f"TTL: {mins}m" if mins > 0 else "TTL: <1m"
+        else:
+            status = ""
 
         if status:
             self.call_from_thread(self.update_border_title, f"{self.model} ㆍ {status}")
