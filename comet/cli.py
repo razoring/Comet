@@ -66,10 +66,24 @@ def main():
         if "model" in settings:
             model = settings["model"]
 
-    diff = subprocess.run(["git", "diff", "HEAD", "-U5"], cwd=os.getcwd(), capture_output=True, text=True, check=True, encoding="utf-8").stdout
+    diff_args = [
+        "git", "diff", "HEAD", "-U5", "--", ".",
+        ":(exclude)package-lock.json",
+        ":(exclude)yarn.lock",
+        ":(exclude)pnpm-lock.yaml",
+        ":(exclude)poetry.lock",
+        ":(exclude)Cargo.lock",
+        ":(exclude)Gemfile.lock",
+        ":(exclude)uv.lock",
+        ":(exclude)*.min.js",
+        ":(exclude)*.min.css",
+        ":(exclude)*.svg"
+    ]
+    diff = subprocess.run(diff_args, cwd=os.getcwd(), capture_output=True, text=True, check=True, encoding="utf-8").stdout
+    status = subprocess.run(["git", "diff", "--name-status", "HEAD"], cwd=os.getcwd(), capture_output=True, text=True, check=True, encoding="utf-8").stdout
     commits = subprocess.run(["git", "log", "-n", "5", "--oneline"], cwd=os.getcwd(), capture_output=True, text=True, check=True, encoding="utf-8").stdout
     
-    app = CometTUI(commit="Generating...", model=model, diff=diff, commits=commits, allModels=[], provider=provider, client=None)
+    app = CometTUI(commit="Generating...", model=model, diff=diff, file_status=status, commits=commits, allModels=[], provider=provider, client=None)
     result = app.run()
     if result: print(result)
 
@@ -220,11 +234,12 @@ class CometTUI(App):
         Binding("enter", "commit_action", "Continue", priority=True)
     ]
 
-    def __init__(self, commit: str, model: str, diff: str, commits: str, allModels: list[str], provider: str = "ollama", client = None):
+    def __init__(self, commit: str, model: str, diff: str, file_status: str, commits: str, allModels: list[str], provider: str = "ollama", client = None):
         super().__init__()
         self.commit = commit
         self.model = model or ""
         self.diff = diff
+        self.file_status = file_status
         self.commits = commits
         self.allModels = allModels
         self.provider = provider
@@ -431,7 +446,7 @@ class CometTUI(App):
         systemPrompt = open(systemPath, "r", encoding="utf-8").read()
         systemPrompt += f"\n\nRecent Commits (For Context Only. DO NOT SUMMARIZE THESE. They are just for tone/style reference):\n{self.commits}"
         
-        promptContent = f"Diff to summarize:\n```diff\n{self.diff}\n```"
+        promptContent = f"Files changed:\n{self.file_status}\n\nDiff to summarize (may exclude minified/auto-generated files):\n```diff\n{self.diff}\n```"
         
         while True:
             messages = [{"role": "system", "content": systemPrompt}]
