@@ -22,6 +22,8 @@ def extract_json_message(buffer: str) -> str:
         text = text.rstrip(" \n\r\t}")
         if text.endswith('"'): text = text[:-1]
         return text.replace('\\n', '\n').replace('\\"', '"')
+
+    if buffer.lstrip().startswith("{"): return ""
     return buffer
 
 def get_settings_path():
